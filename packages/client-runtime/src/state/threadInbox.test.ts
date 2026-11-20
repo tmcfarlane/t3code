@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import {
   createInboxReturnTracker,
+  isThreadWatching,
   isThreadWorking,
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
@@ -234,6 +235,85 @@ describe("createInboxReturnTracker", () => {
     vi.advanceTimersByTime(2_000);
     expect(notify).not.toHaveBeenCalled();
     expect(tracker.returnedAt(thread("a", false))).toBeUndefined();
+  });
+
+  it("stamps a thread when its watch ends so it surfaces at the top of the inbox", () => {
+    const tracker = createInboxReturnTracker();
+    const watching = {
+      ...thread("a", false),
+      pendingBackgroundTasks: [{ taskId: "m", kind: "monitor" as const }],
+    };
+    tracker.observe([watching]);
+    vi.advanceTimersByTime(5_000);
+    tracker.observe([thread("a", false)]);
+    expect(tracker.returnedAt(thread("a", false))).toBe(15_000);
+  });
+});
+
+describe("isThreadWatching", () => {
+  const idle = {
+    ...thread("a", false),
+    runtime: {
+      ...thread("a", true).runtime!,
+      status: "idle" as const,
+    },
+  };
+  const watch = { startedAt: "2026-06-01T00:00:00.000Z" } as never;
+  const task = (kind: "command" | "monitor" | "subagent", awaited?: boolean) =>
+    ({
+      taskId: `${kind}-1`,
+      kind,
+      ...(awaited === undefined ? {} : { awaited }),
+    }) as never;
+
+  it.each<[string, Partial<Parameters<typeof isThreadWatching>[0]>, boolean]>([
+    ["a PR watch", { pullRequests: [{ watch }] as never }, true],
+    ["an unawaited monitor", { pendingBackgroundTasks: [task("monitor")] }, true],
+    [
+      "an awaited command and no live run",
+      { pendingBackgroundTasks: [task("command", true)] },
+      true,
+    ],
+    ["only an unawaited command", { pendingBackgroundTasks: [task("command")] }, false],
+    ["an ended watch", { pullRequests: [{}] as never }, false],
+    [
+      "a live run",
+      { pullRequests: [{ watch }] as never, runtime: thread("a", true).runtime },
+      false,
+    ],
+    [
+      "a live run id behind awaited work",
+      {
+        pendingBackgroundTasks: [task("command", true)],
+        runtime: { ...idle.runtime, activeRunId: RunId.make("run-1") },
+      },
+      false,
+    ],
+    [
+      "a running subagent",
+      { pendingBackgroundTasks: [task("subagent", true), task("monitor")] },
+      false,
+    ],
+    [
+      "a pending approval",
+      { pullRequests: [{ watch }] as never, hasPendingApprovals: true },
+      false,
+    ],
+    [
+      "pending user input",
+      { pullRequests: [{ watch }] as never, hasPendingUserInput: true },
+      false,
+    ],
+    [
+      "a failed run",
+      {
+        pullRequests: [{ watch }] as never,
+        runtime: { ...idle.runtime, status: "failed" as const, lastError: "boom" },
+      },
+      false,
+    ],
+  ])("%s", (_name, change, expected) => {
+    expect(isThreadWatching({ ...idle, ...change })).toBe(expected);
   });
 });
 

@@ -30,6 +30,47 @@ export function isThreadWorking(thread: WorkingThreadInput): boolean {
   return !(thread.interactionMode === "plan" && thread.hasActionableProposedPlan && runSettled);
 }
 
+type WatchingThreadInput = Pick<
+  EnvironmentThreadShell,
+  | "hasActionableProposedPlan"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "pendingSubagentRequest"
+  | "interactionMode"
+  | "runtime"
+> &
+  Partial<Pick<EnvironmentThreadShell, "pendingBackgroundTasks" | "pullRequests">>;
+
+const LIVE_RUN_STATUSES: ReadonlySet<string | undefined> = new Set([
+  "preparing",
+  "queued",
+  "starting",
+  "running",
+  "waiting",
+]);
+
+/**
+ * Idle on a PR watch, a monitor, or awaited background work. A live run or a running
+ * subagent keeps the thread working, and anything needing the user keeps it in the inbox.
+ */
+export function isThreadWatching(thread: WatchingThreadInput): boolean {
+  const tasks = thread.pendingBackgroundTasks ?? [];
+  const holdsWatch =
+    (thread.pullRequests ?? []).some((pullRequest) => pullRequest.watch != null) ||
+    tasks.some((task) => task.kind === "monitor" || task.awaited === true);
+  if (!holdsWatch) return false;
+  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
+  if (thread.pendingSubagentRequest != null) return false;
+  if (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) return false;
+  if (tasks.some((task) => task.kind === "subagent")) return false;
+  if (thread.runtime?.lastError != null) return false;
+  // Awaited work parks runtime at "idle", so a live run shows as an active run id instead.
+  if (thread.runtime?.activeRunId != null || LIVE_RUN_STATUSES.has(thread.runtime?.status)) {
+    return false;
+  }
+  return !threadRuntimeIsActive(thread.runtime);
+}
+
 /**
  * A thread its own client is launching reads as preparing until its first run lands.
  * The server commits the thread before its run, so the list would otherwise place it twice.
@@ -108,6 +149,7 @@ function sortNewestFirst<T extends Pick<EnvironmentThreadShell, "id" | "environm
 }
 
 type TrackedInboxThread = WorkingThreadInput &
+  WatchingThreadInput &
   InboxThreadInput &
   Partial<
     Pick<
@@ -149,7 +191,12 @@ export function createInboxReturnTracker() {
   const keyOf = (thread: ThreadKeyInput) => `${thread.environmentId}:${thread.id}`;
   const states = new Map<
     string,
-    { working: boolean; deadline: number | null; placement: string | null }
+    {
+      working: boolean;
+      watching: boolean;
+      deadline: number | null;
+      placement: string | null;
+    }
   >();
   const returns = new Map<string, number>();
   const listeners = new Set<() => void>();
@@ -248,8 +295,11 @@ export function createInboxReturnTracker() {
             ? (previous.deadline ?? at + WORKING_EXIT_GRACE_MS)
             : null;
         const working = actual || (deadline !== null && deadline > at);
-        if (previous?.working && !working) returns.set(key, at);
-        states.set(key, { working, deadline: working ? deadline : null, placement });
+        const watching = isThreadWatching(thread);
+        if ((previous?.working && !working) || (previous?.watching && !watching)) {
+          returns.set(key, at);
+        }
+        states.set(key, { working, watching, deadline: working ? deadline : null, placement });
       }
       for (const key of states.keys()) {
         if (!present.has(key)) {

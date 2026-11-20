@@ -1145,18 +1145,22 @@ describe("Working shelf (beta)", () => {
       row("a2", "active"),
       marker("working-header"),
       row("w1", "working"),
+      marker("watching-header"),
+      row("v1", "watching"),
       marker("settled-header"),
       row("s1", "settled"),
     ];
 
-    it("never drops into the Working shelf, and keeps it out of the inbox order", () => {
+    it("never drops into the Working or Watching shelf, and keeps them out of the inbox order", () => {
       expect(resolveSidebarDropTarget(items, "a1", "w1")).toBeNull();
+      expect(resolveSidebarDropTarget(items, "a1", "v1")).toBeNull();
       expect(resolveSidebarDropTarget(items, "p1", "a2")).toEqual({
         section: "active",
         pinnedOrder: [],
         activeOrder: ["a1", "a2", "p1"],
       });
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
+      expect(resolveSidebarDropVerb("active", "watching")).toBeNull();
     });
 
     it.each([

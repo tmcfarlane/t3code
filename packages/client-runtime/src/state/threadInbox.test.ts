@@ -312,6 +312,19 @@ describe("isThreadWatching", () => {
       },
       false,
     ],
+    [
+      "a failed latest run with no recorded error",
+      {
+        pullRequests: [{ watch }] as never,
+        latestRun: { status: "failed" } as never,
+      },
+      false,
+    ],
+    [
+      "pending guest messages",
+      { pullRequests: [{ watch }] as never, pendingGuestMessageCount: 1 },
+      false,
+    ],
   ])("%s", (_name, change, expected) => {
     expect(isThreadWatching({ ...idle, ...change })).toBe(expected);
   });

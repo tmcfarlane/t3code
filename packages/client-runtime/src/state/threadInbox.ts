@@ -30,7 +30,7 @@ export function isThreadWorking(thread: WorkingThreadInput): boolean {
   return !(thread.interactionMode === "plan" && thread.hasActionableProposedPlan && runSettled);
 }
 
-type WatchingThreadInput = Pick<
+type ActionableThreadInput = Pick<
   EnvironmentThreadShell,
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
@@ -38,7 +38,23 @@ type WatchingThreadInput = Pick<
   | "pendingSubagentRequest"
   | "interactionMode"
   | "runtime"
+  | "latestRun"
 > &
+  Partial<Pick<EnvironmentThreadShell, "pendingGuestMessageCount">>;
+
+function isThreadActionable(thread: ActionableThreadInput): boolean {
+  return (
+    thread.hasPendingApprovals ||
+    thread.hasPendingUserInput ||
+    thread.pendingSubagentRequest != null ||
+    (thread.pendingGuestMessageCount ?? 0) > 0 ||
+    (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) ||
+    thread.runtime?.lastError != null ||
+    thread.latestRun?.status === "failed"
+  );
+}
+
+type WatchingThreadInput = ActionableThreadInput &
   Partial<Pick<EnvironmentThreadShell, "pendingBackgroundTasks" | "pullRequests">>;
 
 export function isThreadWatching(thread: WatchingThreadInput): boolean {
@@ -46,12 +62,8 @@ export function isThreadWatching(thread: WatchingThreadInput): boolean {
   const holdsWatch =
     (thread.pullRequests ?? []).some((pullRequest) => pullRequest.watch != null) ||
     tasks.some((task) => task.kind === "monitor" || task.awaited === true);
-  if (!holdsWatch) return false;
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
-  if (thread.pendingSubagentRequest != null) return false;
-  if (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) return false;
+  if (!holdsWatch || isThreadActionable(thread)) return false;
   if (tasks.some((task) => task.kind === "subagent")) return false;
-  if (thread.runtime?.lastError != null) return false;
   // Awaited work parks runtime at "idle", so a live run shows as an active run id instead.
   return thread.runtime?.activeRunId == null && !threadRuntimeIsActive(thread.runtime);
 }
@@ -257,14 +269,7 @@ export function createInboxReturnTracker() {
                 thread.activeOrderKey,
               ])
             : null;
-        const actionable =
-          thread.hasPendingApprovals ||
-          thread.hasPendingUserInput ||
-          thread.pendingSubagentRequest != null ||
-          (thread.pendingGuestMessageCount ?? 0) > 0 ||
-          (thread.interactionMode === "plan" && thread.hasActionableProposedPlan) ||
-          thread.runtime?.lastError != null ||
-          thread.latestRun?.status === "failed";
+        const actionable = isThreadActionable(thread);
         const moved = previous !== undefined && previous.placement !== placement;
         const excluded =
           thread.archivedAt != null ||

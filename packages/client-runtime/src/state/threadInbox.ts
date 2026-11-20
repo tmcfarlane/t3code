@@ -41,18 +41,6 @@ type WatchingThreadInput = Pick<
 > &
   Partial<Pick<EnvironmentThreadShell, "pendingBackgroundTasks" | "pullRequests">>;
 
-const LIVE_RUN_STATUSES: ReadonlySet<string | undefined> = new Set([
-  "preparing",
-  "queued",
-  "starting",
-  "running",
-  "waiting",
-]);
-
-/**
- * Idle on a PR watch, a monitor, or awaited background work. A live run or a running
- * subagent keeps the thread working, and anything needing the user keeps it in the inbox.
- */
 export function isThreadWatching(thread: WatchingThreadInput): boolean {
   const tasks = thread.pendingBackgroundTasks ?? [];
   const holdsWatch =
@@ -65,10 +53,7 @@ export function isThreadWatching(thread: WatchingThreadInput): boolean {
   if (tasks.some((task) => task.kind === "subagent")) return false;
   if (thread.runtime?.lastError != null) return false;
   // Awaited work parks runtime at "idle", so a live run shows as an active run id instead.
-  if (thread.runtime?.activeRunId != null || LIVE_RUN_STATUSES.has(thread.runtime?.status)) {
-    return false;
-  }
-  return !threadRuntimeIsActive(thread.runtime);
+  return thread.runtime?.activeRunId == null && !threadRuntimeIsActive(thread.runtime);
 }
 
 /**

@@ -331,6 +331,12 @@ const SHELF_COPY = {
     collapse: msg("Collapses the working threads."),
     expand: msg("Expands the working threads."),
   },
+  watching: {
+    label: msg("Watching", { $context: "thread list section" }),
+    count: msg("{count, plural, one {{count} watching thread} other {{count} watching threads}}"),
+    collapse: msg("Collapses the watching threads."),
+    expand: msg("Expands the watching threads."),
+  },
   snoozed: {
     label: msg("Snoozed", { $context: "thread list section" }),
     count: msg("{count, plural, one {{count} snoozed thread} other {{count} snoozed threads}}"),
@@ -372,6 +378,12 @@ export const ThreadListV2WorkingShelfHeader = memo(function ThreadListV2WorkingS
   props: ThreadListV2ShelfHeaderProps,
 ) {
   return <ThreadListV2ShelfHeader {...props} kind="working" />;
+});
+
+export const ThreadListV2WatchingShelfHeader = memo(function ThreadListV2WatchingShelfHeader(
+  props: ThreadListV2ShelfHeaderProps,
+) {
+  return <ThreadListV2ShelfHeader {...props} kind="watching" />;
 });
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(

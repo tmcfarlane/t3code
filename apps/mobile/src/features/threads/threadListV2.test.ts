@@ -1758,6 +1758,34 @@ describe("Working section beta", () => {
     expect(off.workingCount).toBe(0);
   });
 
+  it("folds a thread idle on a monitor into a Watching shelf after Working", () => {
+    const watcher = makeThread({
+      id: ThreadId.make("watcher"),
+      title: "watcher",
+      pendingBackgroundTasks: [{ taskId: "pull-request-watch:1", kind: "monitor" }],
+    });
+    const layout = build({ threads: [...threads, watcher], watchingShelfExpanded: true });
+    expect(ids(layout).slice(-1)).toEqual(["watcher"]);
+    expect(layout.watchingCount).toBe(1);
+    expect(layout.watchingShelfHeaderIndex).toBe(4);
+    expect(layout.workingCount).toBe(1);
+    expect(
+      build({ threads: [...threads, watcher], workingShelfEnabled: false }).watchingCount,
+    ).toBe(0);
+    const items = buildThreadListV2ListItems({
+      items: layout.items,
+      pendingTasks: [],
+      workingCount: layout.workingCount,
+      workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+      watchingCount: layout.watchingCount,
+      watchingShelfHeaderIndex: layout.watchingShelfHeaderIndex,
+    });
+    expect(items.map((item) => item.type).filter((type) => type.endsWith("shelf"))).toEqual([
+      "v2-working-shelf",
+      "v2-watching-shelf",
+    ]);
+  });
+
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
